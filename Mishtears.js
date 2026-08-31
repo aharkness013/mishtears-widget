@@ -1,0 +1,318 @@
+// Variables used by Scriptable.
+// icon-color: red; icon-glyph: heart;
+// Version: 4.0.0
+
+// ── Setup ────────────────────────────────────────────────────────────────
+// Nothing to edit here! This script is identical for everyone on purpose —
+// each person is asked for the Firebase project ID the first time they run
+// it (not the widget, the script itself), and it's remembered on-device
+// from then on. That's what keeps auto-updates from this file safe: the
+// code can change, but personal config never lives inside it.
+//
+// If you're hosting this file on GitHub so it can auto-update itself, put
+// the "raw" URL here (see SETUP.md) before you distribute it. Leave it
+// blank to skip auto-updating — everything else still works.
+const SCRIPT_RAW_URL = "https://raw.githubusercontent.com/aharkness013/mishtears-widget/refs/heads/main/Mishtears";
+
+// The name shown everywhere in the widget and button screen.
+const PERSON_NAME = "Mish";
+
+// Filename of an MP3 or WAV file to open (with one tap on Play, in Apple's
+// native audio player) right after the button resets the counter. Put the
+// actual audio file in the SAME iCloud folder Scriptable keeps its scripts
+// in (Files app → iCloud Drive → Scriptable, right next to this .js file),
+// then put its exact filename here, e.g. "cry-sound.mp3". Leave blank to
+// skip this — the button still works fine without it. Only a phone that
+// actually has the file sitting in that folder will show anything;
+// everyone else's copy just silently skips it.
+const SOUND_FILE_NAME = "cry-sound.mp3";
+
+// Alternative to the file above: the name of a Shortcut (in Apple's free
+// Shortcuts app) to run right after a successful reset — handy if you'd
+// rather pick a song from an Apple Music library than use a specific
+// file. Leave blank to skip. See SETUP.md, Part 5.
+const CRY_SHORTCUT_NAME = "";
+
+const CONFIG_KEY = "mishtears_firebase_project_id";
+const CACHE_KEY = "mishtears_last_cry_date";
+const UPDATE_CHECK_KEY = "mishtears_last_update_check";
+const UPDATE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000; // once a day
+
+function docURL(projectId) {
+  return `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/counter/shared`;
+}
+
+// ── One-time on-device config ──────────────────────────────────────────────
+
+function savedProjectId() {
+  const v = Keychain.contains(CONFIG_KEY) ? Keychain.get(CONFIG_KEY) : null;
+  return v && v.trim().length > 0 ? v.trim() : null;
+}
+
+// Only ever called outside a widget refresh — you can't show a prompt while
+// a widget is silently updating in the background.
+async function promptForProjectId() {
+  const alert = new Alert();
+  alert.title = "One-time setup";
+  alert.message = "Paste the Firebase project ID your friend gave you, then tap Save.";
+  alert.addTextField("e.g. mishtears-a1b2c", "");
+  alert.addAction("Save");
+  await alert.present();
+  const value = (alert.textFieldValue(0) || "").trim();
+  if (value) Keychain.set(CONFIG_KEY, value);
+  return value || null;
+}
+
+// ── Self-update (optional) ─────────────────────────────────────────────────
+// Downloads the latest version of THIS file from GitHub and saves it to
+// disk for the *next* run. Never executes downloaded code directly — it
+// only ever writes a text file, which is the safe way to do this. Runs at
+// most once a day, and fails silently if there's no connection. Only runs
+// outside widget refreshes, so it never slows those down.
+function parseVersion(text) {
+  const m = /\/\/\s*Version:\s*([\d.]+)/.exec(text || "");
+  return m ? m[1].split(".").map(Number) : null;
+}
+
+// True only if version `a` is strictly newer than version `b`. A missing
+// remote version never counts as newer; a missing local version always
+// loses to any real remote version (so this never fires on a genuinely
+// fresh file), but otherwise this never lets an update go *backwards*.
+function isNewerVersion(a, b) {
+  if (!a) return false;
+  if (!b) return true;
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const x = a[i] || 0, y = b[i] || 0;
+    if (x !== y) return x > y;
+  }
+  return false;
+}
+
+async function checkForUpdate() {
+  if (!SCRIPT_RAW_URL) return;
+  try {
+    const lastCheck = Keychain.contains(UPDATE_CHECK_KEY) ? Number(Keychain.get(UPDATE_CHECK_KEY)) : 0;
+    if (Date.now() - lastCheck < UPDATE_CHECK_INTERVAL_MS) return;
+    Keychain.set(UPDATE_CHECK_KEY, String(Date.now()));
+
+    const req = new Request(SCRIPT_RAW_URL);
+    const latest = await req.loadString();
+    if (!latest || latest.trim().length === 0) return;
+
+    const fm = FileManager.local();
+    const path = module.filename;
+    const current = fm.readString(path);
+
+    // Only ever move forward — never overwrite a newer local copy with an
+    // older one that happens to still be sitting on GitHub.
+    if (latest !== current && isNewerVersion(parseVersion(latest), parseVersion(current))) {
+      fm.writeString(path, latest);
+    }
+  } catch (e) {
+    // Offline or GitHub unreachable — just try again tomorrow.
+  }
+}
+
+// ── Firestore helpers (plain REST, no SDK needed) ──────────────────────────
+
+async function fetchLastCryDate(projectId) {
+  try {
+    const req = new Request(docURL(projectId));
+    const json = await req.loadJSON();
+    const iso = json.fields.lastCryDate.timestampValue;
+    const date = new Date(iso);
+    Keychain.set(CACHE_KEY, date.toISOString());
+    return date;
+  } catch (e) {
+    // Offline, or Firebase isn't set up yet — fall back to the last value
+    // we successfully saw, or today (0 days) if we've never seen one.
+    if (Keychain.contains(CACHE_KEY)) {
+      return new Date(Keychain.get(CACHE_KEY));
+    }
+    return new Date();
+  }
+}
+
+async function resetCounter(projectId) {
+  const now = new Date();
+  const iso = now.toISOString();
+  const url = docURL(projectId) + "?updateMask.fieldPaths=lastCryDate";
+  const req = new Request(url);
+  req.method = "PATCH";
+  req.headers = { "Content-Type": "application/json" };
+  req.body = JSON.stringify({ fields: { lastCryDate: { timestampValue: iso } } });
+  await req.loadJSON();
+  Keychain.set(CACHE_KEY, iso);
+}
+
+// ── "Play a song" via a Shortcut (optional, alternative to a local file) ───
+function playCryingSongViaShortcut() {
+  if (!CRY_SHORTCUT_NAME) return;
+  try {
+    const cb = new CallbackURL("shortcuts://x-callback-url/run-shortcut");
+    cb.addParameter("name", CRY_SHORTCUT_NAME);
+    cb.open(); // fire-and-forget — not awaited on purpose
+  } catch (e) {
+    // If anything's misconfigured here, the counter still reset fine.
+  }
+}
+
+// ── Local audio file playback (optional) ───────────────────────────────────
+// Looks for SOUND_FILE_NAME next to this script, in either the iCloud or
+// on-device Scriptable folder (whichever this install actually uses), and
+// opens it in Apple's native Quick Look player — a real, reliable system
+// component that handles audio/video playback on its own (one tap on Play).
+function findLocalAudioPath() {
+  if (!SOUND_FILE_NAME) return null;
+  const managers = [FileManager.iCloud(), FileManager.local()];
+  for (const fm of managers) {
+    try {
+      const path = fm.joinPath(fm.documentsDirectory(), SOUND_FILE_NAME);
+      if (fm.fileExists(path)) return { fm, path };
+    } catch (e) {
+      // try the next one
+    }
+  }
+  return null;
+}
+
+async function playLocalSoundFile() {
+  const found = findLocalAudioPath();
+  if (!found) return;
+  try {
+    const { fm, path } = found;
+    if (fm.isFileDownloaded && !fm.isFileDownloaded(path)) {
+      await fm.downloadFileFromiCloud(path);
+    }
+    await QuickLook.present(path, false);
+  } catch (e) {
+    // If this fails, the counter still reset fine.
+  }
+}
+
+function daysBetween(a, b) {
+  const start = new Date(a.getFullYear(), a.getMonth(), a.getDate());
+  const end = new Date(b.getFullYear(), b.getMonth(), b.getDate());
+  return Math.round((end - start) / 86400000);
+}
+
+// ── Widget UI (shown on the Home Screen) ───────────────────────────────────
+
+async function buildWidget(days) {
+  const widget = new ListWidget();
+  widget.backgroundColor = Color.dynamic(new Color("ffffff"), new Color("1c1c1e"));
+
+  const stack = widget.addStack();
+  stack.layoutVertically();
+  stack.addSpacer();
+
+  const number = stack.addText(`${days}`);
+  number.font = Font.boldRoundedSystemFont(48);
+  number.centerAlignText();
+
+  const label = stack.addText(days === 1 ? `day since\n${PERSON_NAME} cried` : `days since\n${PERSON_NAME} cried`);
+  label.font = Font.systemFont(12);
+  label.textColor = Color.gray();
+  label.centerAlignText();
+
+  stack.addSpacer();
+
+  // Ask iOS to check again in ~30 minutes.
+  widget.refreshAfterDate = new Date(Date.now() + 30 * 60 * 1000);
+  return widget;
+}
+
+function buildSetupNeededWidget() {
+  const widget = new ListWidget();
+  widget.backgroundColor = Color.dynamic(new Color("ffffff"), new Color("1c1c1e"));
+  const stack = widget.addStack();
+  stack.layoutVertically();
+  stack.addSpacer();
+  const text = stack.addText("Tap to finish setup");
+  text.font = Font.systemFont(14);
+  text.centerAlignText();
+  stack.addSpacer();
+  return widget;
+}
+
+// ── Button UI (shown when the widget or script icon is tapped) ────────────
+// This uses Scriptable's native UITable rather than a custom web page —
+// less flashy (a red row, not a literal circle) but built entirely out of
+// well-tested, native Scriptable components, so it's the reliable choice
+// for something that actually needs to work.
+
+async function showButtonScreen(days, projectId) {
+  const table = new UITable();
+  table.showSeparators = false;
+
+  const header = new UITableRow();
+  header.height = 140;
+  header.isHeader = true;
+  header.addText(`${days}`, days === 1 ? `day since ${PERSON_NAME} cried` : `days since ${PERSON_NAME} cried`)
+    .titleFont = Font.boldRoundedSystemFont(48);
+  table.addRow(header);
+
+  const buttonRow = new UITableRow();
+  buttonRow.height = 90;
+  buttonRow.backgroundColor = Color.red();
+  buttonRow.dismissOnSelect = false;
+  const cell = buttonRow.addText("I cried today");
+  cell.titleColor = Color.white();
+  cell.titleFont = Font.boldSystemFont(24);
+  cell.centerAligned();
+
+  buttonRow.onSelect = async () => {
+    try {
+      await resetCounter(projectId);
+      playCryingSongViaShortcut();
+      await playLocalSoundFile();
+      const a = new Alert();
+      a.title = "Reset 💧";
+      a.message = "Back to 0. The widget will catch up within about half an hour.";
+      a.addAction("OK");
+      await a.present();
+    } catch (e) {
+      const a = new Alert();
+      a.title = "Couldn't save";
+      a.message = "Check your internet connection and try again.";
+      a.addAction("OK");
+      await a.present();
+    }
+    Script.complete();
+  };
+  table.addRow(buttonRow);
+
+  await table.present();
+}
+
+// ── Entry point ─────────────────────────────────────────────────────────
+
+if (config.runsInWidget) {
+  // Background refresh: no prompts, no update checks — just show the count.
+  const projectId = savedProjectId();
+  if (!projectId) {
+    Script.setWidget(buildSetupNeededWidget());
+  } else {
+    const lastCryDate = await fetchLastCryDate(projectId);
+    const days = daysBetween(lastCryDate, new Date());
+    Script.setWidget(await buildWidget(days));
+  }
+} else {
+  // Opened directly (tapped the widget, tapped a Home Screen icon, or run
+  // from inside Scriptable) — safe to prompt and to check for updates.
+  await checkForUpdate();
+  const projectId = savedProjectId() || (await promptForProjectId());
+  if (!projectId) {
+    const a = new Alert();
+    a.title = "Setup needed";
+    a.message = "Run this again and enter the Firebase project ID to continue.";
+    a.addAction("OK");
+    await a.present();
+  } else {
+    const lastCryDate = await fetchLastCryDate(projectId);
+    const days = daysBetween(lastCryDate, new Date());
+    await showButtonScreen(days, projectId);
+  }
+}
+
+Script.complete();
