@@ -38,28 +38,28 @@ const UPDATE_CHECK_KEY = "mishtears_last_update_check";
 const UPDATE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000; // once a day
 
 function docURL(projectId) {
-  return `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/counter/shared`;
+  return `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/counter/shared`;
 }
 
 // ── One-time on-device config ──────────────────────────────────────────────
 
 function savedProjectId() {
-  const v = Keychain.contains(CONFIG_KEY) ? Keychain.get(CONFIG_KEY) : null;
-  return v && v.trim().length > 0 ? v.trim() : null;
+  const v = Keychain.contains(CONFIG_KEY) ? Keychain.get(CONFIG_KEY) : null;
+  return v && v.trim().length > 0 ? v.trim() : null;
 }
 
 // Only ever called outside a widget refresh — you can't show a prompt while
 // a widget is silently updating in the background.
 async function promptForProjectId() {
-  const alert = new Alert();
-  alert.title = "One-time setup";
-  alert.message = "Paste the Firebase project ID your friend gave you, then tap Save.";
-  alert.addTextField("e.g. mishtears-a1b2c", "");
-  alert.addAction("Save");
-  await alert.present();
-  const value = (alert.textFieldValue(0) || "").trim();
-  if (value) Keychain.set(CONFIG_KEY, value);
-  return value || null;
+  const alert = new Alert();
+  alert.title = "One-time setup";
+  alert.message = "Paste the Firebase project ID your friend gave you, then tap Save.";
+  alert.addTextField("e.g. mishtears-a1b2c", "");
+  alert.addAction("Save");
+  await alert.present();
+  const value = (alert.textFieldValue(0) || "").trim();
+  if (value) Keychain.set(CONFIG_KEY, value);
+  return value || null;
 }
 
 // ── Self-update (optional) ─────────────────────────────────────────────────
@@ -69,69 +69,69 @@ async function promptForProjectId() {
 // most once a day, and fails silently if there's no connection. Only runs
 // outside widget refreshes, so it never slows those down.
 async function checkForUpdate() {
-  if (!SCRIPT_RAW_URL) return;
-  try {
-    const lastCheck = Keychain.contains(UPDATE_CHECK_KEY) ? Number(Keychain.get(UPDATE_CHECK_KEY)) : 0;
-    if (Date.now() - lastCheck < UPDATE_CHECK_INTERVAL_MS) return;
-    Keychain.set(UPDATE_CHECK_KEY, String(Date.now()));
+  if (!SCRIPT_RAW_URL) return;
+  try {
+    const lastCheck = Keychain.contains(UPDATE_CHECK_KEY) ? Number(Keychain.get(UPDATE_CHECK_KEY)) : 0;
+    if (Date.now() - lastCheck < UPDATE_CHECK_INTERVAL_MS) return;
+    Keychain.set(UPDATE_CHECK_KEY, String(Date.now()));
 
-    const req = new Request(SCRIPT_RAW_URL);
-    const latest = await req.loadString();
-    if (!latest || latest.trim().length === 0) return;
+    const req = new Request(SCRIPT_RAW_URL);
+    const latest = await req.loadString();
+    if (!latest || latest.trim().length === 0) return;
 
-    const fm = FileManager.local();
-    const path = module.filename;
-    const current = fm.readString(path);
-    if (latest !== current) {
-      fm.writeString(path, latest);
-    }
-  } catch (e) {
-    // Offline or GitHub unreachable — just try again tomorrow.
-  }
+    const fm = FileManager.local();
+    const path = module.filename;
+    const current = fm.readString(path);
+    if (latest !== current) {
+      fm.writeString(path, latest);
+    }
+  } catch (e) {
+    // Offline or GitHub unreachable — just try again tomorrow.
+  }
 }
 
 // ── Firestore helpers (plain REST, no SDK needed) ──────────────────────────
 
 async function fetchLastCryDate(projectId) {
-  try {
-    const req = new Request(docURL(projectId));
-    const json = await req.loadJSON();
-    const iso = json.fields.lastCryDate.timestampValue;
-    const date = new Date(iso);
-    Keychain.set(CACHE_KEY, date.toISOString());
-    return date;
-  } catch (e) {
-    // Offline, or Firebase isn't set up yet — fall back to the last value
-    // we successfully saw, or today (0 days) if we've never seen one.
-    if (Keychain.contains(CACHE_KEY)) {
-      return new Date(Keychain.get(CACHE_KEY));
-    }
-    return new Date();
-  }
+  try {
+    const req = new Request(docURL(projectId));
+    const json = await req.loadJSON();
+    const iso = json.fields.lastCryDate.timestampValue;
+    const date = new Date(iso);
+    Keychain.set(CACHE_KEY, date.toISOString());
+    return date;
+  } catch (e) {
+    // Offline, or Firebase isn't set up yet — fall back to the last value
+    // we successfully saw, or today (0 days) if we've never seen one.
+    if (Keychain.contains(CACHE_KEY)) {
+      return new Date(Keychain.get(CACHE_KEY));
+    }
+    return new Date();
+  }
 }
 
 async function resetCounter(projectId) {
-  const now = new Date();
-  const iso = now.toISOString();
-  const url = docURL(projectId) + "?updateMask.fieldPaths=lastCryDate";
-  const req = new Request(url);
-  req.method = "PATCH";
-  req.headers = { "Content-Type": "application/json" };
-  req.body = JSON.stringify({ fields: { lastCryDate: { timestampValue: iso } } });
-  await req.loadJSON();
-  Keychain.set(CACHE_KEY, iso);
+  const now = new Date();
+  const iso = now.toISOString();
+  const url = docURL(projectId) + "?updateMask.fieldPaths=lastCryDate";
+  const req = new Request(url);
+  req.method = "PATCH";
+  req.headers = { "Content-Type": "application/json" };
+  req.body = JSON.stringify({ fields: { lastCryDate: { timestampValue: iso } } });
+  await req.loadJSON();
+  Keychain.set(CACHE_KEY, iso);
 }
 
 // ── "Play a song" via a Shortcut (optional, alternative to a local file) ───
 function playCryingSongViaShortcut() {
-  if (!CRY_SHORTCUT_NAME) return;
-  try {
-    const cb = new CallbackURL("shortcuts://x-callback-url/run-shortcut");
-    cb.addParameter("name", CRY_SHORTCUT_NAME);
-    cb.open(); // fire-and-forget — not awaited on purpose
-  } catch (e) {
-    // If anything's misconfigured here, the counter still reset fine.
-  }
+  if (!CRY_SHORTCUT_NAME) return;
+  try {
+    const cb = new CallbackURL("shortcuts://x-callback-url/run-shortcut");
+    cb.addParameter("name", CRY_SHORTCUT_NAME);
+    cb.open(); // fire-and-forget — not awaited on purpose
+  } catch (e) {
+    // If anything's misconfigured here, the counter still reset fine.
+  }
 }
 
 // ── Local audio file → embeddable data URI (optional) ──────────────────────
@@ -140,79 +140,79 @@ function playCryingSongViaShortcut() {
 // returns it as a data: URI the button screen's <audio> tag can play
 // directly — no hosting, no separate app hand-off needed.
 function findLocalAudioPath() {
-  if (!SOUND_FILE_NAME) return null;
-  const managers = [FileManager.iCloud(), FileManager.local()];
-  for (const fm of managers) {
-    try {
-      const path = fm.joinPath(fm.documentsDirectory(), SOUND_FILE_NAME);
-      if (fm.fileExists(path)) return { fm, path };
-    } catch (e) {
-      // try the next one
-    }
-  }
-  return null;
+  if (!SOUND_FILE_NAME) return null;
+  const managers = [FileManager.iCloud(), FileManager.local()];
+  for (const fm of managers) {
+    try {
+      const path = fm.joinPath(fm.documentsDirectory(), SOUND_FILE_NAME);
+      if (fm.fileExists(path)) return { fm, path };
+    } catch (e) {
+      // try the next one
+    }
+  }
+  return null;
 }
 
 async function loadLocalAudioDataURI() {
-  const found = findLocalAudioPath();
-  if (!found) return null;
-  try {
-    const { fm, path } = found;
-    if (fm.isFileDownloaded && !fm.isFileDownloaded(path)) {
-      await fm.downloadFileFromiCloud(path);
-    }
-    const data = fm.readData(path);
-    const base64 = data.toBase64String();
-    const mime = SOUND_FILE_NAME.toLowerCase().endsWith(".wav") ? "wav" : "mpeg";
-    return `data:audio/${mime};base64,${base64}`;
-  } catch (e) {
-    return null;
-  }
+  const found = findLocalAudioPath();
+  if (!found) return null;
+  try {
+    const { fm, path } = found;
+    if (fm.isFileDownloaded && !fm.isFileDownloaded(path)) {
+      await fm.downloadFileFromiCloud(path);
+    }
+    const data = fm.readData(path);
+    const base64 = data.toBase64String();
+    const mime = SOUND_FILE_NAME.toLowerCase().endsWith(".wav") ? "wav" : "mpeg";
+    return `data:audio/${mime};base64,${base64}`;
+  } catch (e) {
+    return null;
+  }
 }
 
 function daysBetween(a, b) {
-  const start = new Date(a.getFullYear(), a.getMonth(), a.getDate());
-  const end = new Date(b.getFullYear(), b.getMonth(), b.getDate());
-  return Math.round((end - start) / 86400000);
+  const start = new Date(a.getFullYear(), a.getMonth(), a.getDate());
+  const end = new Date(b.getFullYear(), b.getMonth(), b.getDate());
+  return Math.round((end - start) / 86400000);
 }
 
 // ── Widget UI (shown on the Home Screen) ───────────────────────────────────
 
 async function buildWidget(days) {
-  const widget = new ListWidget();
-  widget.backgroundColor = Color.dynamic(new Color("ffffff"), new Color("1c1c1e"));
+  const widget = new ListWidget();
+  widget.backgroundColor = Color.dynamic(new Color("ffffff"), new Color("1c1c1e"));
 
-  const stack = widget.addStack();
-  stack.layoutVertically();
-  stack.addSpacer();
+  const stack = widget.addStack();
+  stack.layoutVertically();
+  stack.addSpacer();
 
-  const number = stack.addText(`${days}`);
-  number.font = Font.boldRoundedSystemFont(48);
-  number.centerAlignText();
+  const number = stack.addText(`${days}`);
+  number.font = Font.boldRoundedSystemFont(48);
+  number.centerAlignText();
 
-  const label = stack.addText(days === 1 ? "day since\nMish cried" : "days since\nMish cried");
-  label.font = Font.systemFont(12);
-  label.textColor = Color.gray();
-  label.centerAlignText();
+  const label = stack.addText(days === 1 ? `day since\n${PERSON_NAME} cried` : `days since\n${PERSON_NAME} cried`);
+  label.font = Font.systemFont(12);
+  label.textColor = Color.gray();
+  label.centerAlignText();
 
-  stack.addSpacer();
+  stack.addSpacer();
 
-  // Ask iOS to check again in ~30 minutes.
-  widget.refreshAfterDate = new Date(Date.now() + 30 * 60 * 1000);
-  return widget;
+  // Ask iOS to check again in ~30 minutes.
+  widget.refreshAfterDate = new Date(Date.now() + 30 * 60 * 1000);
+  return widget;
 }
 
 function buildSetupNeededWidget() {
-  const widget = new ListWidget();
-  widget.backgroundColor = Color.dynamic(new Color("ffffff"), new Color("1c1c1e"));
-  const stack = widget.addStack();
-  stack.layoutVertically();
-  stack.addSpacer();
-  const text = stack.addText("Tap to finish setup");
-  text.font = Font.systemFont(14);
-  text.centerAlignText();
-  stack.addSpacer();
-  return widget;
+  const widget = new ListWidget();
+  widget.backgroundColor = Color.dynamic(new Color("ffffff"), new Color("1c1c1e"));
+  const stack = widget.addStack();
+  stack.layoutVertically();
+  stack.addSpacer();
+  const text = stack.addText("Tap to finish setup");
+  text.font = Font.systemFont(14);
+  text.centerAlignText();
+  stack.addSpacer();
+  return widget;
 }
 
 // ── Button UI (shown when the widget or script icon is tapped) ────────────
@@ -223,71 +223,125 @@ function buildSetupNeededWidget() {
 // that tries to autoplay with no interaction at all, which iOS blocks).
 
 async function showButtonScreen(days, projectId) {
-  const table = new UITable();
-  table.showSeparators = false;
+  const audioDataURI = await loadLocalAudioDataURI();
+  const dayWord = days === 1 ? "day" : "days";
 
-  const header = new UITableRow();
-  header.height = 140;
-  header.isHeader = true;
-  header.addText(`${days}`, days === 1 ? "day since Mish cried" : "days since Mish cried")
-    .titleFont = Font.boldRoundedSystemFont(48);
-  table.addRow(header);
+  const html = `<!doctype html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<style>
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    background: #0b0b0d;
+    color: #ffffff;
+    font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+    -webkit-tap-highlight-color: transparent;
+  }
+  body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+  .count { font-size: 72px; font-weight: 800; line-height: 1; }
+  .label { font-size: 16px; color: #9a9a9e; margin: 8px 0 48px; text-align: center; }
+  .cry-button {
+    width: 220px; height: 220px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, #ff5b5b, #d61f1f 70%);
+    color: #ffffff;
+    font-size: 22px;
+    font-weight: 700;
+    line-height: 1.3;
+    border: none;
+  }
+  .cry-button:active { transform: scale(0.94); }
+  .cry-button:disabled { opacity: 0.6; }
+  .status { font-size: 15px; color: #9a9a9e; margin-top: 28px; text-align: center; min-height: 20px; }
+</style>
+</head>
+<body>
+  <div class="count">${days}</div>
+  <div class="label">${dayWord} since ${PERSON_NAME} cried</div>
+  <button class="cry-button" id="cryButton">I cried<br>today</button>
+  <div class="status" id="status"></div>
+  ${audioDataURI ? `<audio id="cryAudio" src="${audioDataURI}"></audio>` : ""}
+  <script>
+    document.getElementById('cryButton').addEventListener('click', function () {
+      var btn = document.getElementById('cryButton');
+      var status = document.getElementById('status');
+      btn.disabled = true;
+      status.textContent = 'Saving…';
+      var audio = document.getElementById('cryAudio');
+      if (audio) {
+        audio.currentTime = 0;
+        audio.play().catch(function () {});
+      }
+      completion('reset');
+    });
+  </script>
+</body>
+</html>`;
 
-  const buttonRow = new UITableRow();
-  buttonRow.height = 90;
-  buttonRow.backgroundColor = Color.red();
-  buttonRow.dismissOnSelect = false;
-  const cell = buttonRow.addText("I cried today");
-  cell.titleColor = Color.white();
-  cell.titleFont = Font.boldSystemFont(24);
-  cell.centerAligned();
+  const webView = new WebView();
+  await webView.loadHTML(html);
 
-  buttonRow.onSelect = async () => {
-    try {
-      await resetCounter(projectId);
-      playCryingSongViaShortcut();
-    } catch (e) {
-      message = "Couldn't save — check your connection, then try again.";
-    }
+  const donePromise = webView.present(true);
 
-    await webView.evaluateJavaScript(`
-      document.getElementById('status').textContent = ${JSON.stringify(message)};
-    `);
-  } catch (e) {
-    // WebView was closed before the button was tapped — nothing to do.
-  }
+  try {
+    await webView.evaluateJavaScript(`
+      document.getElementById('cryButton').addEventListener('click', function () {
+        completion('reset');
+      });
+    `, true);
 
-  await donePromise;
+    let message = "Reset 💧 — the widget will catch up within about half an hour.";
+    try {
+      await resetCounter(projectId);
+      playCryingSongViaShortcut();
+    } catch (e) {
+      message = "Couldn't save — check your connection, then try again.";
+    }
+
+    await webView.evaluateJavaScript(`
+      document.getElementById('status').textContent = ${JSON.stringify(message)};
+    `);
+  } catch (e) {
+    // WebView was closed before the button was tapped — nothing to do.
+  }
+
+  await donePromise;
 }
 
 // ── Entry point ─────────────────────────────────────────────────────────
 
 if (config.runsInWidget) {
-  // Background refresh: no prompts, no update checks — just show the count.
-  const projectId = savedProjectId();
-  if (!projectId) {
-    Script.setWidget(buildSetupNeededWidget());
-  } else {
-    const lastCryDate = await fetchLastCryDate(projectId);
-    const days = daysBetween(lastCryDate, new Date());
-    Script.setWidget(await buildWidget(days));
-  }
+  // Background refresh: no prompts, no update checks — just show the count.
+  const projectId = savedProjectId();
+  if (!projectId) {
+    Script.setWidget(buildSetupNeededWidget());
+  } else {
+    const lastCryDate = await fetchLastCryDate(projectId);
+    const days = daysBetween(lastCryDate, new Date());
+    Script.setWidget(await buildWidget(days));
+  }
 } else {
-  // Opened directly (tapped the widget, tapped a Home Screen icon, or run
-  // from inside Scriptable) — safe to prompt and to check for updates.
-  await checkForUpdate();
-  const projectId = savedProjectId() || (await promptForProjectId());
-  if (!projectId) {
-    const a = new Alert();
-    a.title = "Setup needed";
-    a.message = "Run this again and enter the Firebase project ID to continue.";
-    a.addAction("OK");
-    await a.present();
-  } else {
-    const lastCryDate = await fetchLastCryDate(projectId);
-    const days = daysBetween(lastCryDate, new Date());
-    await showButtonScreen(days, projectId);
-  }
+  // Opened directly (tapped the widget, tapped a Home Screen icon, or run
+  // from inside Scriptable) — safe to prompt and to check for updates.
+  await checkForUpdate();
+  const projectId = savedProjectId() || (await promptForProjectId());
+  if (!projectId) {
+    const a = new Alert();
+    a.title = "Setup needed";
+    a.message = "Run this again and enter the Firebase project ID to continue.";
+    a.addAction("OK");
+    await a.present();
+  } else {
+    const lastCryDate = await fetchLastCryDate(projectId);
+    const days = daysBetween(lastCryDate, new Date());
+    await showButtonScreen(days, projectId);
+  }
 }
 
 Script.complete();
