@@ -12,7 +12,7 @@
 // If you're hosting this file on GitHub so it can auto-update itself, put
 // the "raw" URL here (see SETUP.md) before you distribute it. Leave it
 // blank to skip auto-updating — everything else still works.
-const SCRIPT_RAW_URL = "";
+const SCRIPT_RAW_URL = "https://raw.githubusercontent.com/aharkness013/mishtears-widget/refs/heads/main/Mishtears";
 
 // The name shown everywhere in the widget and button screen.
 const PERSON_NAME = "Mish";
@@ -24,7 +24,7 @@ const PERSON_NAME = "Mish";
 // blank to skip this — the button still works fine without it. Only a
 // phone that actually has the file sitting in that folder will play
 // anything; everyone else's copy just silently skips it.
-const SOUND_FILE_NAME = "";
+const SOUND_FILE_NAME = "cry-sound.mp3";
 
 // Alternative to the file above: the name of a Shortcut (in Apple's free
 // Shortcuts app) to run right after a successful reset — handy if you'd
