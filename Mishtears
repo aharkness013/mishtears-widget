@@ -124,7 +124,7 @@ async function buildWidget(days) {
   number.font = Font.boldRoundedSystemFont(48);
   number.centerAlignText();
 
-  const label = stack.addText(days === 1 ? "day since\nshe cried" : "days since\nshe cried");
+  const label = stack.addText(days === 1 ? "day since\nMish cried" : "days since\nMish cried");
   label.font = Font.systemFont(12);
   label.textColor = Color.gray();
   label.centerAlignText();
@@ -158,7 +158,7 @@ async function showButtonScreen(days, projectId) {
   const header = new UITableRow();
   header.height = 140;
   header.isHeader = true;
-  header.addText(`${days}`, days === 1 ? "day since she cried" : "days since she cried")
+  header.addText(`${days}`, days === 1 ? "day since Mish cried" : "days since Mish cried")
     .titleFont = Font.boldRoundedSystemFont(48);
   table.addRow(header);
 
