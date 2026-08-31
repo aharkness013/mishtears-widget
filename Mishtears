@@ -12,7 +12,7 @@
 // If you're hosting this file on GitHub so it can auto-update itself, put
 // the "raw" URL here (see SETUP.md) before you distribute it. Leave it
 // blank to skip auto-updating — everything else still works.
-const SCRIPT_RAW_URL = "";
+const SCRIPT_RAW_URL = "https://raw.githubusercontent.com/aharkness013/mishtears-widget/refs/heads/main/Mishtears";
 
 const CONFIG_KEY = "mishtears_firebase_project_id";
 const CACHE_KEY = "mishtears_last_cry_date";
